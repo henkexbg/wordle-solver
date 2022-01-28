@@ -7,7 +7,7 @@ import java.util.List;
  * based on a guessed word. The result states which character was correct, not
  * correct and in the wrong place.
  * 
- * @author Henrik
+ * @author Henrik Bjerne
  *
  */
 public interface WordleAuthority {

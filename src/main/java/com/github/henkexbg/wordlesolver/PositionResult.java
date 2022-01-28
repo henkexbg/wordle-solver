@@ -1,7 +1,8 @@
 package com.github.henkexbg.wordlesolver;
+
 /**
  * 
- * @author Henrik
+ * @author Henrik Bjerne
  *
  */
 public class PositionResult {

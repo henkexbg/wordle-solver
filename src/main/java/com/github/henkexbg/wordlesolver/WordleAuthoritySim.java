@@ -10,7 +10,7 @@ import java.util.List;
  * Fully functioning authority that is configured with one word, and will give
  * results based on that word.
  * 
- * @author Henrik
+ * @author Henrik Bjerne
  *
  */
 public class WordleAuthoritySim implements WordleAuthority {

@@ -19,7 +19,7 @@ import java.util.StringTokenizer;
  * <li>x- - a letter followed by a hyphen means letter exists but is in wrong
  * position. Yellow in Wordle.</li>
  * 
- * @author Henrik
+ * @author Henrik Bjerne
  *
  */
 public class WordleAuthorityInteractive implements WordleAuthority {
@@ -51,6 +51,7 @@ public class WordleAuthorityInteractive implements WordleAuthority {
 
 	/**
 	 * Helper method for reading a line
+	 * 
 	 * @return One line from STDIN, tokenized by space.
 	 */
 	private List<String> readLineFromStdIn() {
