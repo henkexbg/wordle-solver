@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -30,15 +31,15 @@ public class WordleSolver {
 
 	public static final String DICTIONARY_RESOURCE_LOCATION = "/dictionary.txt";
 
-	public static final int MAX_NR_TURNS = 20;
+	public static final int MAX_NR_TURNS = 6;
 
 	/**
 	 * This word is always used as a start guess. Gave the lowest average number of
-	 * tries (4.0) out of some random testing when benchmarking.
+	 * tries (3.80) out of some random testing when benchmarking.
 	 */
-	public static final List<Character> START_WORD = Arrays.asList(new Character[] { 'r', 'a', 'n', 'c', 'e' });
-
-	private static boolean detailedLog = false;
+	public static final List<Character> START_WORD = Arrays.asList(new Character[] { 's', 'a', 'l', 'e', 't' });
+	
+	static boolean detailedLog = false;
 
 	/**
 	 * Authority that will give us results
@@ -67,7 +68,14 @@ public class WordleSolver {
 	Map<Character, LetterOccurrence> occurrencesMap;
 
 	/**
-	 * Dictionary containing all possible words
+	 * Dictionary containing all possible words. Considered read-only
+	 */
+	List<List<Character>> originalDictionary;
+
+	/**
+	 * Dictionary containing all possible words for one run. This list will be
+	 * loaded with all words for each new run, and non-valid words will be removed
+	 * during the run
 	 */
 	List<List<Character>> dictionary;
 
@@ -84,7 +92,7 @@ public class WordleSolver {
 	 * @throws IOException
 	 */
 	public void setDictionarySource(InputStream dictionaryStream) throws Exception {
-		dictionary = new ArrayList<>();
+		List<List<Character>> originalDictionary = new ArrayList<>();
 		BufferedReader br = new BufferedReader(new InputStreamReader(dictionaryStream));
 		String oneLine = null;
 		while (true) {
@@ -102,9 +110,10 @@ public class WordleSolver {
 			for (int i = 0; i < oneLine.length(); i++) {
 				oneWord.add(oneLine.charAt(i));
 			}
-			dictionary.add(Collections.unmodifiableList(oneWord));
+			originalDictionary.add(Collections.unmodifiableList(oneWord));
 		}
-		System.out.println(String.format("Added %s words to dictionary", dictionary.size()));
+		this.originalDictionary = Collections.unmodifiableList(originalDictionary);
+		System.out.println(String.format("Added %s words to dictionary", originalDictionary.size()));
 		br.close();
 	}
 
@@ -116,6 +125,7 @@ public class WordleSolver {
 	 */
 	public RunStat play() throws Exception {
 		long startTime = System.currentTimeMillis();
+		dictionary = new LinkedList<>(originalDictionary);
 		guessedWord = new ArrayList<>(Arrays.asList(new Character[WORD_LENGTH]));
 		nonPresentChars = new HashSet<>();
 		lostLetterMap = new HashMap<>();
@@ -156,18 +166,19 @@ public class WordleSolver {
 		}
 		WordleAuthoritySim wordleAuthoritySim = (WordleAuthoritySim) wordleAuthority;
 
-		for (List<Character> oneWord : dictionary) {
+		for (List<Character> oneWord : originalDictionary) {
 			wordleAuthoritySim.setActualWord(oneWord);
 			runStats.add(play());
 		}
 		int successCount = (int) runStats.stream().map(rs -> rs.success).filter(success -> success).count();
 		long failureCount = runStats.size() - successCount;
 		double avgNrTries = runStats.stream().map(rs -> rs.nrTries).collect(Collectors.averagingDouble(x -> x));
+		int maxNrTries = runStats.stream().map(rs -> rs.nrTries).max(Integer::compare).get();
 		long totalDurationMillis = runStats.stream().map(rs -> rs.durationMillis)
 				.collect(Collectors.summingLong(x -> x));
 		System.out.println(String.format(
-				"Run completed. Successes: %s, failures: %s, average number of tries: %s. Total duration milliseconds: %s",
-				successCount, failureCount, avgNrTries, totalDurationMillis));
+				"Run completed. Successes: %s, failures: %s, average number of tries: %s, max number of tries: %s. Total duration milliseconds: %s",
+				successCount, failureCount, avgNrTries, maxNrTries, totalDurationMillis));
 	}
 
 	/**
@@ -198,29 +209,35 @@ public class WordleSolver {
 			guessedWord = new ArrayList<>(START_WORD);
 			return true;
 		}
-
-		for (List<Character> oneWord : dictionary) {
+		Iterator<List<Character>> it = dictionary.iterator();
+		while (it.hasNext()) {
+			List<Character> oneWord = it.next();
 			if (!validateConfirmedMatches(oneWord, guessedWord)) {
+				it.remove();
 				continue;
 			}
 
 			// Check whether the word contains confirmed non-matching characters
 			if (oneWord.stream().anyMatch(c -> nonPresentChars.contains(c))) {
+				it.remove();
 				continue;
 			}
 
 			// Check whether there are lost letters with a discovered quantity
 			// and match that towards the word
-			if (!validateConfirmedLostLetterOccurrences(oneWord)) {
+			if (!validateLetterOccurrences(oneWord)) {
+				it.remove();
 				continue;
 			}
 
 			// Check that all letters without position are in word
-			if (!validateConfirmedLostLetters(oneWord, guessedWord)) {
+			if (!validateLostLetters(oneWord, guessedWord)) {
+				it.remove();
 				continue;
 			}
-
-			guessedWord = new ArrayList<>(oneWord);
+		}
+		if (!dictionary.isEmpty()) {
+			guessedWord = new ArrayList<>(selectBestWord(dictionary));
 			return true;
 		}
 		return false;
@@ -252,7 +269,7 @@ public class WordleSolver {
 	 * @param guessedWord   Current guessed word with any matching letters populated
 	 * @return True if any known occurrences are validated
 	 */
-	boolean validateConfirmedLostLetterOccurrences(List<Character> potentialWord) {
+	boolean validateLetterOccurrences(List<Character> potentialWord) {
 		// Count occurrences in potential word
 		Map<Character, Integer> potentialWordOccurrencesPerChar = new HashMap<>();
 		for (int i = 0; i < potentialWord.size(); i++) {
@@ -281,25 +298,40 @@ public class WordleSolver {
 	 * @param guessedWord   Current guessed word with any matching letters populated
 	 * @return True if all lost letters are present in potential word
 	 */
-	boolean validateConfirmedLostLetters(List<Character> potentialWord, List<Character> guessedWord) {
-		// Make a copy of lwp map - we will remove elements once used and make sure we
-		// end up with empty map
-		Map<Character, LostLetter> lostLetterMapCopy = new HashMap<>(lostLetterMap);
+	boolean validateLostLetters(List<Character> potentialWord, List<Character> guessedWord) {
 		for (int i = 0; i < potentialWord.size(); i++) {
 			if (guessedWord.get(i) != null) {
 				continue;
 			}
 			Character c = potentialWord.get(i);
-			WordleSolver.LostLetter letterWithoutPosition = lostLetterMapCopy.get(c);
-			if (letterWithoutPosition != null) {
-				if (letterWithoutPosition.positionOk(i)) {
-					lostLetterMapCopy.remove(c);
-				} else {
+			WordleSolver.LostLetter lostLetter = lostLetterMap.get(c);
+			if (lostLetter != null) {
+				if (!lostLetter.positionOk(i)) {
 					return false;
 				}
 			}
 		}
-		return lostLetterMapCopy.isEmpty();
+		return true;
+	}
+
+	/**
+	 * Picks the best word out of a list of valid words. "Best" in this case is
+	 * simply the word with most unique characters.
+	 * 
+	 * @param validWords List of valid words
+	 * @return Word with most unique characters
+	 */
+	List<Character> selectBestWord(List<List<Character>> validWords) {
+		List<Character> bestWord = null;
+		int bestUniqueCount = 0;
+		for (List<Character> oneValidWord : validWords) {
+			int oneUniqueCount = (int) oneValidWord.stream().distinct().count();
+			if (oneUniqueCount > bestUniqueCount) {
+				bestUniqueCount = oneUniqueCount;
+				bestWord = oneValidWord;
+			}
+		}
+		return bestWord;
 	}
 
 	/**
@@ -323,7 +355,6 @@ public class WordleSolver {
 	 * @return True if guess was correct.
 	 */
 	boolean makeGuess() {
-
 		// This map counts the number of occurrences of each letter. It's required to
 		// determine multi-occurring letters, and see if we can manage to determine the
 		// occurrence of that letter
@@ -360,6 +391,8 @@ public class WordleSolver {
 				guessedWord.set(i, null);
 			}
 		}
+		
+		// Updates minimum occurrences of letters
 		occurrencesPerChar.forEach((k, v) -> {
 			LetterOccurrence letterOccurrence = occurrencesMap.get(k);
 			if (letterOccurrence == null) {
@@ -369,7 +402,7 @@ public class WordleSolver {
 			letterOccurrence.setMinOccurrencesIfLarger(v);
 		});
 
-		// Determines whether we can lock in any occurrences of any letter
+		// Determines whether we can lock in any exact occurrences of any letter
 		for (int i = 0; i < result.size(); i++) {
 			PositionResult positionGuess = result.get(i);
 			Character c = positionGuess.c;
@@ -551,7 +584,6 @@ public class WordleSolver {
 				return;
 			}
 		}
-
 	}
 
 	/**
