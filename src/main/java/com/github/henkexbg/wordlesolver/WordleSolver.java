@@ -38,11 +38,11 @@ public class WordleSolver {
 	 * tries (3.80) out of some random testing when benchmarking.
 	 */
 	public static final List<Character> START_WORD = Arrays.asList(new Character[] { 's', 'a', 'l', 'e', 't' });
-	
+
 	static boolean detailedLog = false;
 
 	/**
-	 * Authority that will give us results
+	 * Authority that will take guesses and give us results
 	 */
 	WordleAuthority wordleAuthority;
 
@@ -55,12 +55,12 @@ public class WordleSolver {
 	/**
 	 * Stores letters we know don't exist in the word
 	 */
-	Set<Character> nonPresentChars;
+	Set<Character> nonPresentLetters;
 
 	/**
 	 * Stores a map of lost letters, with the character as the key for quick lookup
 	 */
-	Map<Character, LostLetter> lostLetterMap;
+	Map<Character, LostLetter> lostLettersMap;
 
 	/**
 	 * Stores occurrences of each letter
@@ -85,8 +85,8 @@ public class WordleSolver {
 
 	/**
 	 * Sets and loads the dictionary that will be used. File format is assumed to be
-	 * one word per line. Words of the wrong length or that contain non-alphabetic
-	 * characters will be thrown away.
+	 * one word per line. Words of the wrong length or words that contain
+	 * non-alphabetic characters will be discarded.
 	 * 
 	 * @param dictionaryFile Dictionary file.
 	 * @throws IOException
@@ -127,8 +127,8 @@ public class WordleSolver {
 		long startTime = System.currentTimeMillis();
 		dictionary = new LinkedList<>(originalDictionary);
 		guessedWord = new ArrayList<>(Arrays.asList(new Character[WORD_LENGTH]));
-		nonPresentChars = new HashSet<>();
-		lostLetterMap = new HashMap<>();
+		nonPresentLetters = new HashSet<>();
+		lostLettersMap = new HashMap<>();
 		occurrencesMap = new HashMap<>();
 		int turn = 1;
 		boolean success = false;
@@ -218,7 +218,7 @@ public class WordleSolver {
 			}
 
 			// Check whether the word contains confirmed non-matching characters
-			if (oneWord.stream().anyMatch(c -> nonPresentChars.contains(c))) {
+			if (oneWord.stream().anyMatch(c -> nonPresentLetters.contains(c))) {
 				it.remove();
 				continue;
 			}
@@ -266,7 +266,6 @@ public class WordleSolver {
 	 * 'e's.
 	 * 
 	 * @param potentialWord Word from dictionary
-	 * @param guessedWord   Current guessed word with any matching letters populated
 	 * @return True if any known occurrences are validated
 	 */
 	boolean validateLetterOccurrences(List<Character> potentialWord) {
@@ -290,9 +289,7 @@ public class WordleSolver {
 	}
 
 	/**
-	 * Check whether all lost letters are represented in the potential word not
-	 * counting confirmed matches. Checks only one occurrence - does not validate
-	 * quantity.
+	 * Check whether all lost letters are represented in the potential word and
 	 * 
 	 * @param potentialWord Word from dictionary
 	 * @param guessedWord   Current guessed word with any matching letters populated
@@ -304,7 +301,7 @@ public class WordleSolver {
 				continue;
 			}
 			Character c = potentialWord.get(i);
-			WordleSolver.LostLetter lostLetter = lostLetterMap.get(c);
+			WordleSolver.LostLetter lostLetter = lostLettersMap.get(c);
 			if (lostLetter != null) {
 				if (!lostLetter.positionOk(i)) {
 					return false;
@@ -359,8 +356,9 @@ public class WordleSolver {
 		// determine multi-occurring letters, and see if we can manage to determine the
 		// occurrence of that letter
 		Map<Character, Integer> occurrencesPerChar = new HashMap<>();
-
 		System.out.println(String.format("Next word to guess: %s", guessedWord));
+
+		// Make guess towards authority and receive answer
 		List<PositionResult> result = wordleAuthority.giveResult(guessedWord);
 
 		if ((int) result.stream().filter(e -> PositionResultState.MATCH.equals(e.positionResultState)).count() == result
@@ -374,16 +372,15 @@ public class WordleSolver {
 			PositionResult positionGuess = result.get(i);
 			Character c = positionGuess.c;
 			if (positionGuess.positionResultState.equals(PositionResultState.MATCH)) {
-				// Correct guess, set character and update lost letters as the letter may not be
-				// lost anymore :)
+				// Correct guess on letter and position
 				guessedWord.set(i, c);
 				occurrencesPerChar.merge(c, 1, Integer::sum);
 			} else if (positionGuess.positionResultState.equals(PositionResultState.OTHER_POSITION)) {
-				if (lostLetterMap.containsKey(c)) {
-					lostLetterMap.get(c).addBlackListedPosition(i);
+				if (lostLettersMap.containsKey(c)) {
+					lostLettersMap.get(c).addBlackListedPosition(i);
 				} else {
 					LostLetter lwp = new LostLetter(c, i);
-					lostLetterMap.put(c, lwp);
+					lostLettersMap.put(c, lwp);
 				}
 				occurrencesPerChar.merge(c, 1, Integer::sum);
 				guessedWord.set(i, null);
@@ -391,7 +388,7 @@ public class WordleSolver {
 				guessedWord.set(i, null);
 			}
 		}
-		
+
 		// Updates minimum occurrences of letters
 		occurrencesPerChar.forEach((k, v) -> {
 			LetterOccurrence letterOccurrence = occurrencesMap.get(k);
@@ -402,7 +399,8 @@ public class WordleSolver {
 			letterOccurrence.setMinOccurrencesIfLarger(v);
 		});
 
-		// Determines whether we can lock in any exact occurrences of any letter
+		// Determines whether we can lock in any exact occurrences of any letter, or
+		// determine that a letter is not present
 		for (int i = 0; i < result.size(); i++) {
 			PositionResult positionGuess = result.get(i);
 			Character c = positionGuess.c;
@@ -411,27 +409,29 @@ public class WordleSolver {
 				if (occurrencesOfChar != null) {
 					occurrencesMap.get(c).setOccurrences(occurrencesOfChar);
 				} else {
-					nonPresentChars.add(c);
+					nonPresentLetters.add(c);
 				}
 			}
 		}
+
+		// Update lost letters structure as some letters may not be lost anymore.
 		updateLostLetters(guessedWord);
 		if (detailedLog) {
-			System.out.println(String.format("Lost letters %s", lostLetterMap));
+			System.out.println(String.format("Lost letters %s", lostLettersMap));
 			System.out.println(String.format("Occurrences: %s", occurrencesMap));
-			System.out.println(String.format("Not present letters: %s", nonPresentChars));
+			System.out.println(String.format("Not present letters: %s", nonPresentLetters));
 		}
 		return false;
 	}
 
 	/**
-	 * Updates the {@link #lostLetterMap}, which should be done any time a new
+	 * Updates the {@link #lostLettersMap}, which should be done any time a new
 	 * correct letter has been added
 	 * 
 	 * @param guessedWord Current guessed word with any matching letters populated
 	 */
 	void updateLostLetters(List<Character> guessedWord) {
-		Iterator<Entry<Character, WordleSolver.LostLetter>> it = lostLetterMap.entrySet().iterator();
+		Iterator<Entry<Character, WordleSolver.LostLetter>> it = lostLettersMap.entrySet().iterator();
 		while (it.hasNext()) {
 			Entry<Character, WordleSolver.LostLetter> entry = it.next();
 			Character c = entry.getKey();
@@ -452,9 +452,8 @@ public class WordleSolver {
 
 	/**
 	 * This class will hold a "lost letter", i.e. a letter that we know exists in
-	 * the word, but we don't know the position. We store additional data for this
-	 * letter, such as black-listed positions where we know the letter will not be,
-	 * as well as occurrences on the occasion we manage to determine that.
+	 * the word, along with black-listed positions where we know the letter will not
+	 * be.
 	 * 
 	 * @author Henrik
 	 *
@@ -522,6 +521,12 @@ public class WordleSolver {
 		}
 	}
 
+	/**
+	 * Holds the stats of one run.
+	 * 
+	 * @author Henrik
+	 *
+	 */
 	class RunStat {
 
 		boolean success;
@@ -547,7 +552,6 @@ public class WordleSolver {
 	public static void main(String[] args) throws Exception {
 		WordleSolver ws = new WordleSolver();
 		ws.setDictionarySource(WordleSolver.class.getResourceAsStream(DICTIONARY_RESOURCE_LOCATION));
-
 		System.out.println(
 				"Choose between simulator or interactive mode. Simulator simulates a Wordle backend, and you need\n"
 						+ "to provide the correct word that the program should then try to find. For interactive, you will\n"
@@ -558,7 +562,7 @@ public class WordleSolver {
 						+ "all words in the dictionary, and gives statistics on an aggregated level.");
 
 		while (true) {
-			System.out.println("[s]imulator, [i]interactive or [b]enchmark?");
+			System.out.println("[s]imulator, [i]interactive, [b]enchmark or [q]uit?");
 			String choice = readLineFromStdIn();
 			if ("s".equals(choice)) {
 				WordleAuthoritySim was = new WordleAuthoritySim();
@@ -579,9 +583,11 @@ public class WordleSolver {
 				WordleAuthoritySim was = new WordleAuthoritySim();
 				ws.setWordleAuthority(was);
 				ws.benchmark();
-			} else {
-				System.out.println("Not a valid choice. Exiting.");
+			} else if ("q".equals(choice)) {
+				System.out.println("Exiting");
 				return;
+			} else {
+				System.out.println("Not a valid choice.");
 			}
 		}
 	}
