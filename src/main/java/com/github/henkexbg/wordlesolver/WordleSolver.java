@@ -33,14 +33,14 @@ public class WordleSolver {
 
 	public static final int MAX_NR_TURNS = 6;
 
+	static boolean detailedLog = false;
+
 	/**
 	 * This word is always used as a start guess. Gave the lowest average number of
 	 * tries (3.80) out of some random testing when benchmarking.
 	 */
-	public static final List<Character> START_WORD = Arrays.asList(new Character[] { 's', 'a', 'l', 'e', 't' });
-
-	static boolean detailedLog = false;
-
+	List<Character> startWord = Arrays.asList(new Character[] { 's', 'a', 'l', 'e', 't' });
+	
 	/**
 	 * Authority that will take guesses and give us results
 	 */
@@ -116,6 +116,10 @@ public class WordleSolver {
 		System.out.println(String.format("Added %s words to dictionary", originalDictionary.size()));
 		br.close();
 	}
+	
+	public void setStartWord(List<Character> startWord) {
+		this.startWord = startWord;
+	}
 
 	/**
 	 * Kicks off a game. Will find the next possible word (given all the information
@@ -140,7 +144,6 @@ public class WordleSolver {
 				break;
 			}
 			boolean result = makeGuess();
-			System.out.println(String.format("Word after guess: %s", guessedWord));
 			if (result) {
 				success = true;
 				break;
@@ -206,7 +209,7 @@ public class WordleSolver {
 	 */
 	boolean findNextGuess(int turn) {
 		if (turn == 1) {
-			guessedWord = new ArrayList<>(START_WORD);
+			guessedWord = new ArrayList<>(startWord);
 			return true;
 		}
 		Iterator<List<Character>> it = dictionary.iterator();
@@ -417,6 +420,7 @@ public class WordleSolver {
 		// Update lost letters structure as some letters may not be lost anymore.
 		updateLostLetters(guessedWord);
 		if (detailedLog) {
+			System.out.println(String.format("Word after guess: %s", guessedWord));
 			System.out.println(String.format("Lost letters %s", lostLettersMap));
 			System.out.println(String.format("Occurrences: %s", occurrencesMap));
 			System.out.println(String.format("Not present letters: %s", nonPresentLetters));
@@ -562,7 +566,8 @@ public class WordleSolver {
 						+ "all words in the dictionary, and gives statistics on an aggregated level.");
 
 		while (true) {
-			System.out.println("[s]imulator, [i]interactive, [b]enchmark or [q]uit?");
+			System.out.println(String.format("Current start guess word: %s", ws.startWord));
+			System.out.println("[s]imulator, [i]interactive, [b]enchmark, [g]uess word change, [l]og level change or [q]uit?");
 			String choice = readLineFromStdIn();
 			if ("s".equals(choice)) {
 				WordleAuthoritySim was = new WordleAuthoritySim();
@@ -583,6 +588,18 @@ public class WordleSolver {
 				WordleAuthoritySim was = new WordleAuthoritySim();
 				ws.setWordleAuthority(was);
 				ws.benchmark();
+			} else if ("g".equals(choice)) {
+				System.out.println("Please enter new start guess word all lower-case");
+				List<Character> word = stringToCharList(readLineFromStdIn());
+				if (word == null || !ws.originalDictionary.contains(word)) {
+					System.out.println("Not a valid word");
+					continue;
+				} else {
+					ws.setStartWord(word); 
+				}
+			} else if ("l".equals(choice)) {
+				detailedLog = !detailedLog;
+				System.out.println(String.format("Detailed log on: %s", detailedLog));
 			} else if ("q".equals(choice)) {
 				System.out.println("Exiting");
 				return;
@@ -591,7 +608,23 @@ public class WordleSolver {
 			}
 		}
 	}
-
+	
+	/**
+	 * Simple helper method to convert string to list of Chars.
+	 * @param str String
+	 * @return List of characters
+	 */
+	static List<Character> stringToCharList(String str) {
+		if (str == null) {
+			return null;
+		}
+		List<Character> wordAsChars = new ArrayList<>();
+		for (int i = 0; i < str.length(); i++) {
+			wordAsChars.add(str.charAt(i));
+		}
+		return wordAsChars;
+	}
+	
 	/**
 	 * Helper method for reading a line.
 	 * 
