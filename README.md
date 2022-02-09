@@ -30,3 +30,11 @@ This mode simply performs one simulation run of each word within the dictionary 
 To build this project simply run: `mvn clean package` in the project directory. This command will generate a file called target/wordle-solver-0.0.1-SNAPSHOT.jar.
 
 This file can then be executed by typing `java -jar wordle-solver-0.0.1-SNAPSHOT.jar`
+
+# How to Build and Run in Docker
+This project can be packaged and run as a Docker container.
+
+First build the container by running `docker build -t wordle-solver .`
+
+Then run the container with `docker run -i wordle-solver`
+
