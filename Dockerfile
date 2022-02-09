@@ -7,7 +7,7 @@ COPY pom.xml /home/app
 RUN mvn -f /home/app/pom.xml clean package
 
 FROM openjdk:17
-ARG version=-0.0.1-SNAPSHOT
+ARG version=-1.0.0
 COPY --from=build /home/app/target/wordle-solver${version}.jar /wordle-solver.jar
 WORKDIR /
 CMD java -jar wordle-solver.jar
